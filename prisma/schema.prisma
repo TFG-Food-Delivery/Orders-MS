@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("ORDERS_DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+model Order {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  date           DateTime      @default(now())
+  totalAmount    Float
+  status         OrderStatus   @default(PENDING)
+  deliveryTime   Int           @default(20)
+  paid           Boolean       @default(false)
+  stripeChargeId String?
+  restaurantId   String        @db.String
+  restaurantName String        @db.String
+  customerId     String        @db.String
+  pin_code       String        @default("") @db.String
+  courierId      String        @default("") @db.String
+  items          OrderItem[]
+  OrderReceipt   OrderReceipt?
+}
+
+model OrderItem {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  dishId   String
+  name     String
+  quantity Int
+  price    Float
+  orderId  String @db.ObjectId
+
+  Order Order @relation(fields: [orderId], references: [id])
+}
+
+model OrderReceipt {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  orderId String @unique @db.ObjectId
+  Order   Order  @relation(fields: [orderId], references: [id])
+
+  receiptUrl String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
