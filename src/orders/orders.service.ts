@@ -59,7 +59,6 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       (sum, item) => sum + item.price * item.quantity,
       0,
     );
-
     const order = await this.order.create({
       data: {
         customerId: createOrderDto.customerId,
@@ -382,6 +381,9 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   async findOneOrder(id: string) {
     const order = await this.order.findUnique({
       where: { id },
+      include: {
+        items: true,
+      },
     });
     if (!order) {
       this.LOGGER.error('Order not found:', id);
