@@ -91,6 +91,25 @@ export class OrdersController {
     return this.ordersService.findAllCustomerOrders(customerId, paginationDto);
   }
 
+  @MessagePattern('getCustomerStats')
+  getCustomerStats(@Payload() payload: { customerId: string; period: string }) {
+    const { customerId, period } = payload;
+    return this.ordersService.getCustomerStats(
+      customerId,
+      period as 'daily' | 'monthly',
+    );
+  }
+  @MessagePattern('getRestaurantStats')
+  getRestaurantStats(
+    @Payload() payload: { restaurantId: string; period: string },
+  ) {
+    const { restaurantId, period } = payload;
+    return this.ordersService.getRestaurantStats(
+      restaurantId,
+      period as 'daily' | 'weekly' | 'monthly',
+    );
+  }
+
   /**
    * Handles the 'findOneOrder' message pattern.
    * @param payload - The payload containing the order ID.

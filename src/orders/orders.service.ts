@@ -59,6 +59,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       (sum, item) => sum + item.price * item.quantity,
       0,
     );
+
     const order = await this.order.create({
       data: {
         customerId: createOrderDto.customerId,
@@ -371,6 +372,189 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         lastPage: Math.ceil(totalOrders / limit),
       },
     };
+  }
+
+  async getCustomerStats(
+    customerId: string,
+    period: 'daily' | 'monthly' = 'monthly',
+  ) {
+    // Obtener todos los pedidos del cliente
+    const orders = await this.order.findMany({
+      where: { customerId, status: OrderStatus.DELIVERED },
+    });
+
+    // Calcular estadísticas básicas
+    const totalSpent = orders.reduce(
+      (sum, order) => sum + order.totalAmount,
+      0,
+    );
+    const totalOrders = orders.length;
+    const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+
+    // Encontrar el restaurante más pedido
+    const restaurantCounts = orders.reduce(
+      (acc: Record<string, { count: number; name: string }>, order) => {
+        if (!acc[order.restaurantId]) {
+          acc[order.restaurantId] = {
+            count: 0,
+            name: order.restaurantName,
+          };
+        }
+        acc[order.restaurantId].count++;
+        return acc;
+      },
+      {},
+    );
+
+    let mostOrderedRestaurant = {
+      id: '',
+      name: '',
+      orderCount: 0,
+    };
+
+    Object.entries(restaurantCounts).forEach(([id, data]) => {
+      if (data.count > mostOrderedRestaurant.orderCount) {
+        mostOrderedRestaurant = {
+          id,
+          name: data.name,
+          orderCount: data.count,
+        };
+      }
+    });
+
+    // Agrupar gastos por período
+    const spendingByPeriod = orders.reduce(
+      (acc: Record<string, number>, order) => {
+        const date = new Date(order.date);
+        const key =
+          period === 'monthly'
+            ? `${date.toLocaleString('es', { month: 'short' })} ${date.getFullYear()}`
+            : date.toISOString().split('T')[0];
+
+        if (!acc[key]) acc[key] = 0;
+        acc[key] += order.totalAmount;
+        return acc;
+      },
+      {},
+    );
+
+    // Convertir a array y ordenar
+    const periodicalSpending = Object.entries(spendingByPeriod)
+      .map(([period, amount]) => ({
+        [period === 'monthly' ? 'month' : 'date']: period,
+        amount: Number(amount.toFixed(2)),
+      }))
+      .sort((a, b) => {
+        const dateA =
+          period === 'monthly'
+            ? new Date((a.month as string).replace(/(\w+)\s(\d+)/, '$2-$1-01'))
+            : new Date(a.date as string);
+        const dateB =
+          period === 'monthly'
+            ? new Date((b.month as string).replace(/(\w+)\s(\d+)/, '$2-$1-01'))
+            : new Date(b.date as string);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+    return {
+      totalSpent: Number(totalSpent.toFixed(2)),
+      averageOrderValue: Number(averageOrderValue.toFixed(2)),
+      totalOrders,
+      [period === 'monthly' ? 'monthlySpending' : 'dailySpending']:
+        periodicalSpending,
+      mostOrderedRestaurant: {
+        id: mostOrderedRestaurant.id,
+        name: mostOrderedRestaurant.name,
+        orderCount: mostOrderedRestaurant.orderCount,
+      },
+    };
+  }
+
+  async getRestaurantStats(
+    restaurantId: string,
+    period: 'daily' | 'weekly' | 'monthly' = 'weekly',
+  ) {
+    const orders = await this.order.findMany({
+      where: { restaurantId, status: OrderStatus.DELIVERED },
+    });
+
+    if (orders.length === 0) {
+      return {
+        stats: {
+          totalRevenue: 0,
+          totalCustomers: 0,
+          totalOrders: 0,
+          averageServiceTime: 0,
+        },
+        revenueData: [],
+      };
+    }
+
+    const totalRevenue = orders.reduce(
+      (sum, order) => sum + order.totalAmount,
+      0,
+    );
+    const totalOrders = orders.length;
+
+    // Calcular clientes únicos
+    const uniqueCustomers = new Set(orders.map((order) => order.customerId));
+    const totalCustomers = uniqueCustomers.size;
+
+    // Agrupar ingresos por día de la semana
+    const revenueByPeriod = orders.reduce(
+      (acc: Record<string, number>, order) => {
+        const date = new Date(order.date);
+        let key: string;
+
+        switch (period) {
+          case 'daily':
+            key = date.toISOString().split('T')[0]; // YYYY-MM-DD
+            break;
+          case 'weekly':
+            key = `Week ${this.getWeekNumber(date)}, ${date.getFullYear()}`; // Semana del año
+            break;
+          case 'monthly':
+            key = `${date.toLocaleString('en', { month: 'long' })} ${date.getFullYear()}`; // Mes y año
+            break;
+        }
+
+        if (!acc[key]) acc[key] = 0;
+        acc[key] += order.totalAmount;
+        return acc;
+      },
+      {},
+    );
+
+    // Convertir a un array ordenado por días de la semana
+    const revenueData = Object.entries(revenueByPeriod)
+      .map(([period, revenue]) => ({
+        [period === 'daily' ? 'date' : period === 'weekly' ? 'week' : 'month']:
+          period,
+        revenue: Number(revenue.toFixed(2)),
+      }))
+      .sort((a, b) => {
+        const dateA = new Date(Object.values(a)[0] as string);
+        const dateB = new Date(Object.values(b)[0] as string);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+    return {
+      stats: {
+        totalRevenue: Number(totalRevenue.toFixed(2)),
+        totalCustomers,
+        totalOrders,
+        averageServiceTime: 15,
+      },
+      revenueData,
+    };
+  }
+
+  getWeekNumber(date: Date): number {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear = Math.floor(
+      (date.getTime() - firstDayOfYear.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   }
 
   /**
