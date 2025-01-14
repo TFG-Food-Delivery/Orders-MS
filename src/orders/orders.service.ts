@@ -60,12 +60,16 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       0,
     );
 
+    const totalAmountWithDelivery = createOrderDto.useLoyaltyPoints
+      ? totalAmount
+      : totalAmount + createOrderDto.deliveryFee;
+
     const order = await this.order.create({
       data: {
         customerId: createOrderDto.customerId,
         restaurantId: createOrderDto.restaurantId,
         restaurantName: createOrderDto.restaurantName,
-        totalAmount,
+        totalAmount: totalAmountWithDelivery,
         items: {
           create: createOrderDto.items.map((item) => ({
             dishId: item.dishId,
@@ -686,6 +690,8 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         orderId,
         courierId: order.courierId,
         restaurantId: order.restaurantId,
+        totalAmount: order.totalAmount,
+        customerId: order.customerId,
       });
       return true;
     } else {
